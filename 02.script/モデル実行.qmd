@@ -1,0 +1,219 @@
+---
+title: "案件名.コーディング工程.コーディング概要"
+format:
+  html:
+    theme: default
+    toc: true
+    toc-title: 目次
+    number-sections: true
+    self-contained: true
+    code-tools: true
+    code-fold: "show"
+execute: 
+  echo: true     # コードを出力に含めるか
+  cache: false   # 実行結果のキャッシュを保持するか
+  prompt: false  # コードの先頭に">"を表示するか
+  tidy: false    # コードの整形を行うか
+  message: false # コードが出力するメッセージを含めるか
+  warning: false # コードが出力する警告を含めるか
+  error: false   # エラーメッセージを表示するか
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+# コード概要
+
+-   ひとまずサンプルデータで回してみる
+-   結果の挙動を確認する
+
+
+## ライブラリ
+```{r}
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+# データ加工
+p_load(tidyverse)
+p_load(data.table)
+p_load(skimr)
+p_load(readxl)
+p_load(openxlsx)
+
+
+# 表・図の可視化
+p_load(formattable)
+p_load(reactable)
+p_load(DT)
+p_load(plotly)
+
+# 分析
+p_load(correlation)
+p_load(corrplot)
+p_load(broom)
+p_load(psych)　# 因子分析・クラスター分析
+
+
+## datatableか
+my_datatable <- function(data, ...) {
+  data %>% 
+    datatable(
+      extensions = 'Buttons',
+      options = list(
+        dom = 'Blfrtip',
+        buttons = c('copy', 'csv'),
+        lengthMenu = list(
+          c(10,50,100,-1),　# 表示行
+          c(10,50,100,"All")　# 表示行のタイトル
+        )
+      )
+    ,...)
+}
+
+# Robynの設定
+p_load(Robyn)
+# 並列処理
+Sys.setenv(R_FUTURE_FORK_ENABLE = "true")
+options(future.fork.enable = TRUE)
+```
+
+## パス設定
+```{r}
+PATH_PROJ = "C:/Users/moris/stats_semi1/bayes/MMM/Robyn_study/"
+
+PATH_DATA = "R/data/dt_simulated_weekly.Rdata"
+
+try = "try1"
+OUTPUT_DIR = str_c(str_c(PATH_PROJ,"03.output/",try))
+# ない場合は作成
+OUTPUT_DIR %>% dir.create()
+```
+
+## 使用するデータ
+Robyn公式が出しているサンプルデータで検証
+
+### 実績データ
+```{r}
+dat = load(str_c(PATH_PROJ,PATH_DATA)) %>% get()
+
+dat %>% my_datatable()
+```
+
+### 休日フラグ
+```{r}
+data("dt_prophet_holidays")
+
+dt_prophet_holidays %>% head(100) %>% my_datatable()
+```
+
+### ハイパーパラメータテーブル
+```{r}
+dat_params = 
+  read_excel(
+    path = str_c(PATH_PROJ,"01.data/mst/mst_params.xlsx")
+    , sheet = try)
+
+dat_params %>% my_datatable()
+
+hypeparams_list = dat_params %>% as.list()
+```
+
+
+# Robyn関数の適用
+
+## Inputさせる情報の整理
+```{r}
+InputCollect <- robyn_inputs(
+  # Inputさせるデータについて
+  dt_input = dt_simulated_weekly
+  , dt_holidays = dt_prophet_holidays
+  
+  # データ型の確認
+  , date_var = "DATE"
+  , dep_var = "revenue"
+  , dep_var_type = "revenue"
+  
+  # 時系列データの扱い
+  , prophet_vars = c("trend", "season", "holiday")
+  , prophet_country = "DE"
+  
+  # 説明変数の種類を確認
+  , context_vars = c("competitor_sales_B", "events")
+  , paid_media_spends = c("tv_S", "ooh_S", "print_S", "facebook_S", "search_S")
+  , paid_media_vars = c("tv_S", "ooh_S", "print_S", "facebook_I", "search_clicks_P")
+  , organic_vars = c("newsletter")
+  , factor_vars = c("events")
+  
+  # 交差検証のデータに関する情報
+  , window_start = "2016-01-01"
+  , window_end = "2018-12-31"
+  
+  # 変数変換（効果のかかり方確認）
+  , adstock = "geometric" 
+  , hyperparameters = hypeparams_list
+)
+
+print(InputCollect)
+```
+
+
+## モデルの実行
+```{r}
+OutputModels <- robyn_run(
+  InputCollect = InputCollect, # feed in all model specification
+  cores = NULL, # NULL defaults to (max available - 1)
+  iterations = 2000, # 2000 recommended for the dummy dataset with no calibration
+  trials = 5, # 5 recommended for the dummy dataset
+  ts_validation = FALSE, # 3-way-split time series for NRMSE validation.
+  add_penalty_factor = FALSE # Experimental feature to add more flexibility
+)
+
+print(OutputModels)
+```
+
+
+
+# 出力
+
+## モデルオブジェクトの保存
+```{r}
+OutputCollect <- robyn_outputs(
+  InputCollect, OutputModels,
+  pareto_fronts = "auto", # automatically pick how many pareto-fronts to fill min_candidates (100)
+  # min_candidates = 100, # top pareto models for clustering. Default to 100
+  # calibration_constraint = 0.1, # range c(0.01, 0.1) & default at 0.1
+  csv_out = "pareto", # "pareto", "all", or NULL (for none)
+  clusters = TRUE, # Set to TRUE to cluster similar models by ROAS. See ?robyn_clusters
+  export = TRUE, # this will create files locally
+  plot_folder = OUTPUT_DIR, # path for plots exports and files creation
+  plot_pareto = TRUE # Set to FALSE to deactivate plotting and saving model one-pagers
+)
+
+```
+
+## 選択したモデルの情報を保存
+```{r}
+# モデル名一覧取得
+OutputCollect$xDecompAgg %>% select(solID) %>% distinct()
+
+
+# もっともNRMSEが小さいものを選択
+df_glance_rank <- OutputCollect$xDecompAgg %>% 
+  group_by(solID) %>% 
+  summarise(across(c(rsq_train, rsq_test, nrmse, nrmse_train, nrmse_test, mape), \(x) mean(x, na.rm = TRUE))) %>% 
+  arrange(desc(rsq_train))
+
+select_model <-  df_glance_rank %>% slice_max(rsq_train, n = 1) %>% pull(solID)
+
+#### Version >=3.7.1: JSON export and import (faster and lighter than RDS files)
+ExportedModel <- robyn_write(InputCollect, OutputCollect, select_model, export = TRUE)
+print(ExportedModel)
+
+# To plot any model's one-pager:
+myOnePager <- robyn_onepagers(InputCollect, OutputCollect, select_model, export = FALSE)
+```
+
+```{r}
+
+```
+
+
