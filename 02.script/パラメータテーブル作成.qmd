@@ -1,0 +1,131 @@
+---
+title: "案件名.コーディング工程.コーディング概要"
+format:
+  html:
+    theme: default
+    toc: true
+    toc-title: 目次
+    number-sections: true
+    self-contained: true
+    code-tools: true
+    code-fold: "show"
+execute: 
+  echo: true     # コードを出力に含めるか
+  cache: false   # 実行結果のキャッシュを保持するか
+  prompt: false  # コードの先頭に">"を表示するか
+  tidy: false    # コードの整形を行うか
+  message: false # コードが出力するメッセージを含めるか
+  warning: false # コードが出力する警告を含めるか
+  error: false   # エラーメッセージを表示するか
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+# コード概要
+
+- ハイパーパラメータテーブルの作成
+
+
+## ライブラリ
+```{r}
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+# データ加工
+p_load(tidyverse)
+p_load(data.table)
+p_load(skimr)
+p_load(readxl)
+p_load(openxlsx)
+
+
+# 表・図の可視化
+p_load(formattable)
+p_load(reactable)
+p_load(DT)
+p_load(plotly)
+
+# 分析
+p_load(correlation)
+p_load(corrplot)
+p_load(broom)
+p_load(psych)　# 因子分析・クラスター分析
+
+
+## datatableか
+my_datatable <- function(data, ...) {
+  data %>% 
+    datatable(
+      extensions = 'Buttons',
+      options = list(
+        dom = 'Blfrtip',
+        buttons = c('copy', 'csv'),
+        lengthMenu = list(
+          c(10,50,100,-1),　# 表示行
+          c(10,50,100,"All")　# 表示行のタイトル
+        )
+      )
+    ,...)
+}
+
+# Robynの設定
+p_load(Robyn)
+# 並列処理
+Sys.setenv(R_FUTURE_FORK_ENABLE = "true")
+options(future.fork.enable = TRUE)
+```
+
+## パス設定
+```{r}
+PATH_PROJ = "C:/Users/moris/stats_semi1/bayes/MMM/Robyn_study/"
+
+PATH_DATA = "R/data/dt_simulated_weekly.Rdata"
+
+try = "try1"
+OUTPUT_DIR = str_c(str_c(PATH_PROJ,"03.output/",try))
+# ない場合は作成
+OUTPUT_DIR %>% dir.create()
+```
+
+## 使用するデータ
+Robyn公式が出しているサンプルデータで検証
+
+### 実績データ
+```{r}
+dat = load(str_c(PATH_PROJ,PATH_DATA)) %>% get()
+
+dat %>% my_datatable()
+```
+
+
+
+# 関数の作成：呼び出し
+```{r}
+source(str_c(PATH_PROJ,"R/R/inputs.R"))
+source(str_c(PATH_PROJ,"R/R/checks.R"))
+```
+
+
+# 関数の適用
+```{r}
+media_name = c( "tv_S","ooh_S","print_S","facebook_S","search_S","newsletter")
+
+
+# Adstock=geometric
+df_geometric = set_default_hyppar(adstock = "geometric", all_media =media_name ) %>%  as_tibble()
+  
+# Adstock=weibull
+df_weibull = set_default_hyppar("weibull", all_media =media_name ) %>% as_tibble()
+
+```
+
+
+# 出力
+```{r}
+df_geometric %>% write_excel_csv(str_c(PATH_PROJ,"01.data/mst/params_geonetric.csv"))
+
+df_weibull %>% write_excel_csv(str_c(PATH_PROJ,"01.data/mst/params_weibull.csv"))
+```
+
+```
+
